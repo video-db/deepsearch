@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from deepsearch import DeepSearchClient
 from deepsearch.retrieval.contracts import UiEvent
+from deepsearch.stores.sqlite import SQLiteSessionStore
 
 load_dotenv()
 
@@ -53,8 +54,12 @@ def main() -> None:
     args = parser.parse_args()
 
     config = args.config if os.path.exists(args.config) else None
+    session_store = SQLiteSessionStore(os.getenv("DEEPSEARCH_DB_PATH"))
     client = DeepSearchClient(
-        config=config, api_key=args.api_key, base_url=args.base_url
+        config=config,
+        api_key=args.api_key,
+        base_url=args.base_url,
+        session_store=session_store,
     )
 
     if args.session_id:

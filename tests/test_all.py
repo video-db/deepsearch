@@ -35,8 +35,8 @@ from deepsearch.retrieval.state import GraphState
 from deepsearch.stores.memory import (
     InMemoryIndexArtifactStore,
     InMemoryIndexRecordStore,
-    InMemorySessionStore,
 )
+from deepsearch.stores.sqlite import SQLiteMetadataStore, SQLiteSessionStore
 
 
 class MockLLMProvider(LLMProvider):
@@ -457,7 +457,7 @@ class TestIndexerContracts(unittest.TestCase):
 
 class TestClientContracts(unittest.TestCase):
     @patch("deepsearch.client.videodb.connect")
-    def test_client_uses_inmemory_store_by_default(self, mock_connect):
+    def test_client_uses_sqlite_stores_by_default(self, mock_connect):
         mock_conn = Mock()
         mock_conn.get_collection.return_value = Mock(id="c1")
         mock_connect.return_value = mock_conn
@@ -465,7 +465,8 @@ class TestClientContracts(unittest.TestCase):
             "os.environ", {"VIDEO_DB_API_KEY": "k", "OPENAI_API_KEY": "k"}, clear=False
         ):
             client = DeepSearchClient()
-        self.assertIsInstance(client._session_store, InMemorySessionStore)
+        self.assertIsInstance(client._session_store, SQLiteSessionStore)
+        self.assertIsInstance(client._metadata_store, SQLiteMetadataStore)
 
     @patch("deepsearch.client.videodb.connect")
     def test_client_passes_videodb_base_url(self, mock_connect):

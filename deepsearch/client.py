@@ -30,8 +30,12 @@ from deepsearch.retrieval.helpers.schema import History, JoinedShot
 from deepsearch.retrieval.state import GraphState
 from deepsearch.stores.base import MetadataStore, SessionStore
 from deepsearch.stores.base import IndexArtifactStore, IndexRecordStore
-from deepsearch.stores.memory import InMemoryMetadataStore, InMemorySessionStore
-from deepsearch.stores.sqlite import SQLiteIndexArtifactStore, SQLiteIndexRecordStore
+from deepsearch.stores.sqlite import (
+    SQLiteIndexArtifactStore,
+    SQLiteIndexRecordStore,
+    SQLiteMetadataStore,
+    SQLiteSessionStore,
+)
 from deepsearch.telemetry.logger import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -76,13 +80,12 @@ class DeepSearchClient:
         self._default_collection_id = collection_id
         self._llm_provider = llm_provider or create_llm_provider(self.config.llm)
         self._detector_provider = detector_provider
-        self._session_store = session_store or InMemorySessionStore()
-        self._metadata_store = metadata_store or InMemoryMetadataStore()
-        self._index_record_store = index_record_store or SQLiteIndexRecordStore(
-            os.getenv("DEEPSEARCH_DB_PATH")
-        )
+        db_path = os.getenv("DEEPSEARCH_DB_PATH")
+        self._session_store = session_store or SQLiteSessionStore(db_path)
+        self._metadata_store = metadata_store or SQLiteMetadataStore(db_path)
+        self._index_record_store = index_record_store or SQLiteIndexRecordStore(db_path)
         self._index_artifact_store = index_artifact_store or SQLiteIndexArtifactStore(
-            os.getenv("DEEPSEARCH_DB_PATH")
+            db_path
         )
         self._graph = build_graph()
 
