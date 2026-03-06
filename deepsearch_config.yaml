@@ -45,7 +45,7 @@ indexing:
     prompt_file: deepsearch/indexing/prompts/vlm_extract.yaml
 
 retrieval:
-  debug_mode: true
+  debug_mode: false
   page_size: 5
   k_variants_per_index: 2
   topk_per_variant: 30
