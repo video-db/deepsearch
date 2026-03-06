@@ -1,0 +1,57 @@
+llm:
+  route: vercel_ai_sdk_python
+  provider_mode: direct
+  models:
+    indexing:
+      scene_enrichment: o3
+      subplot_summary: o3
+      final_summary: o3
+    retrieval:
+      planner: o3 #gpt-4o-2024-11-20
+      paraphrase: o3 #gpt-4o-2024-11-20
+      validator: o3 #gpt-4o-2024-11-20
+      none_analyzer: o3 #gpt-4o-2024-11-20
+      interpreter: o3 #gpt-4o-2024-11-20
+      reranker: o3 #gpt-4o-2024-11-20
+
+indexing:
+  debug_mode: true
+  overwrite_existing_indexes: true
+  scene_extraction:
+    shot_threshold: 30
+    shot_frame_count: 10
+    time_interval: 1
+    time_frame_count: 1
+  transcript:
+    method: index_spoken_words
+    engine: gemini
+    language_code: ""
+  object_detection:
+    mode: local
+    provider: rtdetr_v2
+    threshold: 0.85
+    batch_size: 8
+    resume_chunk_size: 256
+  vlm:
+    llm_max_images: 10
+    batch_size: 500
+    max_concurrent_llm_calls: 150
+    generate_subplot: true
+    subplot_chunk_size: 250
+    retry_attempts: 3
+    retry_backoff_sec: 1
+    temperature: 0
+    thinking_budget: medium
+    prompt_file: deepsearch/indexing/prompts/vlm_extract.yaml
+
+retrieval:
+  debug_mode: false
+  page_size: 5
+  k_variants_per_index: 2
+  topk_per_variant: 30
+  score_threshold: 0.0
+  dynamic_score_percentage: 100
+  validator_max: 40
+  validator_batch_size: 8
+  max_ops_per_batch: 4
+  recursion_limit: 12

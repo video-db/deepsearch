@@ -1,0 +1,222 @@
+vlm_extract_prompt: |
+  You are an expert multimedia-content analyst.  
+  For each movie clip, integrate evidence from three sources simultaneously:
+
+  • Visual frames (sequence of frames in logical order)  
+  • Full transcript (dialogues, sound effects, on-screen text)  
+  • Provided object list (all detected object labels)
+
+  Your task is to output one unified JSON object (schema at the end).  
+  Follow the detailed requirements below.
+
+  ===============================================================================
+  GLOBAL RULES
+  ===============================================================================
+  1. **Multi-Modal Fusion**  
+    Analyse every field using visuals, transcript, and—where helpful—the object list.  
+    If cues conflict, note the conflict briefly (e.g., “visual joy vs. sarcastic dialogue”)—do **not** invent compromises.
+
+  2. **Confidence Scale (0.0 - 1.0)**  
+    0.9-1.0  strong corroboration | 0.7-0.8  clear evidence + support | 0.5-0.6  moderate / some doubt  
+    0.3-0.4  weak evidence | 0.0-0.2  highly uncertain
+
+  3. **Strict JSON Only**  
+    Return exactly the JSON block—no explanatory prose outside it.
+
+  ===============================================================================
+  FIELD-BY-FIELD EXPECTATIONS
+  ===============================================================================
+
+  A. **emotion**  
+    • `emotion_type`: exactly one of ** {{happiness, sadness, anger, fear, surprise, disgust, neutral}}**.  
+    • `confidence`: numeric score.  
+    • `evidence_source`: “visual”, “transcript”, or “both”.  
+    • `context_notes`: citing specific cues (facial expression, musical tone, dialogue wording, etc.).
+
+  B. **action**  (2 sentences max, to the point)
+    • Multi-sentence description of the dominant action(s). Cover:  
+      - Key verbs and their unfolding (“slams”, “paces anxiously”).  
+      - Interactions with **main objects** from the object list (only if they are relevant to the action).  
+      - Spatial relationships and proximity (e.g., “standing behind the counter”, “two metres apart”).  
+      - Urgency/tempo and implied intent or outcome.
+      - Do not make this up about only the objects, make it about the action.
+
+  C. **location**  (2 sentences max, to the point)
+    • Several sentences including:  
+      - Interior / Exterior / Fantastical classification **and** sub-category if inferable (e.g., interior-residential, exterior-natural).  
+      - Architectural / environmental style:  
+        *Historical period*  {{ancient, medieval, renaissance, industrial, modern, contemporary, futuristic}} +  
+        *Style aesthetic*  {{minimalist, decay/ruins, etc}}.  
+      - **Historical era**, **time of day**, **season**, and any **recognisable landmark or city**.  
+      - Scale/intimacy (claustrophobic, intimate, comfortable, spacious, vast, overwhelming).  
+      - Atmosphere: weather, temperature hints, colour palette, lighting direction, ambient sounds.  
+      - Notable set-decoration or props that anchor the era/setting (e.g., rotary phone, neon kanji sign, steam-powered machinery).
+
+  D. **scene_description**  (2 sentences max, to the point)
+    • Rich visual narrative.
+    - Discuss the visual features of the scene.
+    - Also perform OCR for the text on the screen.
+    - Do not make this up about only the objects, make it about the visual features of the scene.
+
+  E. **shot_type**  
+    • One or two words, lowercase separated by underscore (“extreme_closeup”, “establishing_wide”).  
+    • If multiple shot types appear, output the one occupying the longest screen time.
+
+  F. **topic**  (2 sentences max, to the point)
+    • `description`: Summarising the thematic subject and emotional/plot arc.  
+    • `confidence`: numeric score.
+
+  G. **song_detection**  
+    • `is_song`: boolean.  
+    • `confidence`: numeric score.  
+    • `song_name`: title if clearly stated or > 0.85 confidence; else empty string.  
+    • `detection_reasoning`: citing:  
+      - Rhythmic or poetic structure in transcript.  
+      - Visual cues (mouth movements matching lyrics, dancing, musical instruments).  
+      - Diegetic vs. non-diegetic audio hints.  
+    • Apply the **“Deaf Viewer” test**: if you muted the audio, would subtitles alone read like lyrics?
+
+  H. **character_description**  (2 sentences max, to the point)
+    • Single coherent paragraph covering **all key characters** (on-screen focus or heavily referenced). Include:
+      - separate descriptions for each character (in a python list).
+      - Behaviour & body language (posture, gestures, eye contact, interpersonal spacing).  
+      - Physical appearance (approx. age, build, perceived ethnicity, hairstyle).  
+      - Clothing colours/styles, accessories, and props in direct contact.  
+      - Distinguishing marks (tattoos, scars, glasses) and emotional undertones.  
+    • Separate character snapshots with semicolons or em-dashes inside the paragraph.
+
+  I. **object_description**  (2 sentences max, to the point)
+    • A paragraph describing the main objects in the scene.
+      - Include the object name, size, condition (clean/dirty, new/broken), texture, colour.
+      - Discuss overall composition, camera angle/movement if apparent, colour contrasts, and any symbolic staging.
+      - Mention object relevance again where symbols or foreshadowing appear (e.g., “blood-stained diary”).
+
+    Important Note: Make sure all the descriptions have maximum of 2 sentences. Be concise and to the point.
+  ===============================================================================
+  OUTPUT JSON SCHEMA (return exactly this structure)
+  ===============================================================================
+   {{
+    "emotion": {{
+    "emotion_type": "happiness",
+    "confidence": 0.92,
+    "evidence_source": "both",
+    "context_notes": "They grin, hug tight, and happily shout “We finally made it!”"
+    }},
+
+    "action": "Two friends walk quickly across the diner, meet at the counter, hug hard, then raise their steaming coffee mugs in a joyful toast.",
+
+    "location": "Inside a cozy 1950s-style diner with chrome trim and a black-and-white tiled floor. Warm winter-morning sunlight pours through frosted windows, giving everything a golden glow.",
+
+    "scene_description": "Turquoise vinyl booths sit under neon signs. A shiny stainless-steel counter mirrors the pair. Pastel walls and soft yellow bulbs add to the nostalgic feel. Fresh coffee steams, and a glowing jukebox hums quietly in the corner.",
+
+    "shot_type": "medium_wide",
+
+    "topic": {{
+    "description": "A heart-warming reunion after a tough journey, celebrating friendship and old-school diner nostalgia.",
+    "confidence": 0.86
+    }},
+
+    "song_detection": {{
+    "is_song": false,
+    "confidence": 0.18,
+    "song_name": "",
+    "detection_reasoning": "No clear lyrics or singing—only the gentle hum of a jukebox in the background."
+    }},
+
+    "character_description": [
+    "South Asian man, late 20s, medium build, short beard, wearing a mustard cardigan over a white shirt; his bright eyes and open arms show his excitement.",
+    "Black woman, late 20s, athletic build, short curly hair, teal coat, and colorful scarf; she laughs easily and matches his energy as she hugs him."
+    ],
+
+    "object_description": "Two chipped white mugs with a red diner logo rest on silver napkin dispensers. A chrome jukebox with colored lights glows nearby, and the scratched Formica counter reflects the mugs and lights. The checkered floor pulls the eye toward the embracing friends."
+    }}
+
+combine_results_prompt: |
+  The user will provide a list of JSON objects, each representing partial scene analyses that follow a fixed schema.
+  Your task is to merge these objects into one coherent scene analysis while strictly preserving the schema.
+
+  Rules for Merging
+  For Character description, append all of them into a single list.
+
+  For emotion_type, and shot_type, create a list of them. But make sure that the format of emotion is maintained. Only the emotion_type should be a combined list. Other value pick **any one** from the list.
+  Also normalize the shot_type to lowercase and make sure it has maximum of 2 words, separated by underscore.
+
+  Schema fidelity: Every key from the schema must appear in the final JSON.
+
+  Information preservation: Do not drop useful details. Combine overlapping content into a single, naturally flowing description without redundancy or unnecessary verbosity.
+
+  Confidence resolution: When fields overlap, prefer entries with the highest confidence score. If no scores are available, select the most specific and informative detail.
+
+  Boolean logic: Combine all boolean fields using an OR operation.
+
+  Textual synthesis: Merge descriptive fields into a smooth, concise narrative that reads naturally, avoiding fragmentation while retaining nuance.
+
+  Retrieval utility: Ensure the final output captures all critical details that could aid a retrieval system (objects, actions, context, emotions, relationships, characters, etc.).
+
+  Output Requirement
+
+  Return exactly one valid JSON object that adheres to the original schema, fully populated with the merged and refined analysis.
+
+subplot_summary_prompt: |
+  You are a skilled story analyst. The user will give you the full list of validated scene JSON objects for an entire movie, in chronological order.
+  Your job is to produce a subplot summary by:
+  Breaking the movie into non-overlapping, contiguous time segments called "subplots."
+
+  Each subplot must include:
+  start: the starting timestamp in seconds (float)
+
+  end: the ending timestamp in seconds (float)
+
+  summary: a paragraph factually describing the events in that segment.
+
+  Subplots must not overlap. Gaps are allowed (e.g., opening credits).
+
+  You may reference earlier subplots if later events build on or resolve them.
+
+  After all subplots, include a final_summary field - 2-3 paragraphs summarizing the entire movie.
+
+  Summaries must be factual and based only on the provided scene data. Do not invent events.
+
+  Output must be valid JSON only (no extra text or formatting), following this schema exactly:
+
+  {{
+    "subplots": [
+      {{
+        "start": 123.0,
+        "end": 456.7,
+        "summary": "<brief description>"
+      }}
+      // repeat in chronological order
+    ],
+    "final_summary": "<overall synopsis>"
+  }}
+
+subplot_combine_prompt: |
+  You will be given multiple JSON objects, each with subplots (containing start, end, and summary fields) and a final_summary, all describing different segments of the same movie.
+  Your task is to merge them into a single, clean JSON that exactly follows this schema:
+
+  {{
+    "subplots": [
+      {{
+        "start": 123.0,
+        "end": 456.7,
+        "summary": "<brief description>"
+      }}
+      // repeat in chronological order
+    ],
+    "final_summary": "<overall synopsis>"
+  }}
+  Follow these rules exactly:
+
+  Chronological flow - Sort subplots by start time. Fix timing conflicts by using narrative order from the descriptions. No overlaps.
+
+  Logical consolidation - Merge subplots that describe the same continuous event or directly connected moments. Delete subplots that add no unique story content.
+
+
+  Concise summaries - cover all important actions, characters, and emotional beats for that time segment. You may describe previous subplots for continuity.
+
+  Consistent style - Use the same tense throughout (past or present). Avoid filler words and keep tone neutral but readable.
+
+  Final summary - Write paragraph that explains the movie's full story arc from start to end, without repeating subplot text.
+
+  Accuracy and completeness - Keep all unique plot elements from the originals. Do not invent events. Resolve conflicts by keeping the most complete and consistent version.

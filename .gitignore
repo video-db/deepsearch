@@ -1,0 +1,8 @@
+deepsearch_hosted/
+videodb-plugins/
+.env
+sample_end_user_usage.py
+deepsearch.db
+deepsearch_oss_specs.md
+deepsearch_oss_prd.md
+**/__pycache__/
