@@ -20,6 +20,7 @@ class GraphState(BaseModel):
     cfg: RetrievalConfig = Field(default_factory=RetrievalConfig)
     llms: Dict[str, Any] = Field(default_factory=dict)
     prompts: Any = None
+    search_client: Any = None
 
     main_query: str = ""
     history: Optional[History] = None
