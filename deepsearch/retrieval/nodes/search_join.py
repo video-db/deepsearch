@@ -10,11 +10,12 @@ from langgraph.types import Command
 from deepsearch.retrieval.helpers.schema import Plan, Shot
 from deepsearch.retrieval.helpers.join import Joiner
 from deepsearch.retrieval.state import GraphState
+from deepsearch.stores.base import SearchClient
 
 logger = logging.getLogger(__name__)
 
 
-class IndexClient:
+class IndexClient(SearchClient):
     def __init__(self, video_id: str = None):
         self.video_id = video_id
         self.num_db_calls = 0
@@ -241,7 +242,7 @@ def search_join_node(state: GraphState):
             cfg.dynamic_score_percentage,
         )
 
-    index_client = IndexClient(video_id=state.video_id)
+    index_client = state.search_client or IndexClient(video_id=state.video_id)
     paraphraser = ParaphraserLLM(state.llm_for("paraphrase"), state.prompts)
     searcher = ParaphraseSearch(
         coll,
