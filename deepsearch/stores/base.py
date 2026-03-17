@@ -42,6 +42,26 @@ class IndexRecordStore(ABC):
     ) -> Optional[Dict[str, Any]]: ...
 
 
+class SearchClient(ABC):
+    """Abstraction for vector search, allowing server-side implementations
+    to bypass the VideoDB SDK round-trip."""
+
+    num_db_calls: int
+
+    @abstractmethod
+    def search(
+        self,
+        coll,
+        index_list: list,
+        q: str,
+        metadata_filters: Dict[str, List[str]],
+        topk: int,
+        sid: Optional[str],
+        score_threshold: float,
+        dynamic_score_percentage: int,
+    ) -> List: ...
+
+
 class IndexArtifactStore(ABC):
     @abstractmethod
     def save_index_artifact(

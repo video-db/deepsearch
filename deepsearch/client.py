@@ -28,7 +28,7 @@ from deepsearch.retrieval.graph import build_graph
 from deepsearch.retrieval.helpers.prompts import PromptFactory
 from deepsearch.retrieval.helpers.schema import History, JoinedShot
 from deepsearch.retrieval.state import GraphState
-from deepsearch.stores.base import MetadataStore, SessionStore
+from deepsearch.stores.base import MetadataStore, SessionStore, SearchClient
 from deepsearch.stores.base import IndexArtifactStore, IndexRecordStore
 from deepsearch.stores.sqlite import (
     SQLiteIndexArtifactStore,
@@ -57,7 +57,9 @@ class DeepSearchClient:
         metadata_store: Optional[MetadataStore] = None,
         index_record_store: Optional[IndexRecordStore] = None,
         index_artifact_store: Optional[IndexArtifactStore] = None,
+        search_client: Optional[SearchClient] = None,
     ):
+        self._search_client = search_client
         self.config = self._resolve_config(config)
         debug_env = os.getenv("DEEPSEARCH_DEBUG", "").strip().lower() in {
             "1",
@@ -247,6 +249,9 @@ class DeepSearchClient:
         )
         history = persisted.get("history") or {}
         plan = persisted.get("plan")
+        extra = {}
+        if self._search_client is not None:
+            extra["search_client"] = self._search_client
         return GraphState.model_validate(
             {
                 **persisted,
@@ -256,6 +261,7 @@ class DeepSearchClient:
                 "llms": self._make_llms(),
                 "history": history,
                 "plan": plan,
+                **extra,
             }
         )
 
@@ -280,6 +286,9 @@ class DeepSearchSession:
         self._stream_cache: Dict[str, str] = {}
 
     def search(self, query: str, *, page_size: Optional[int] = None) -> RetrievalResult:
+        extra = {}
+        if self._client._search_client is not None:
+            extra["search_client"] = self._client._search_client
         state = GraphState(
             session_id=self.session_id,
             collection_id=self.collection_id,
@@ -296,6 +305,7 @@ class DeepSearchSession:
             main_query=query,
             history=History(),
             page_size=self._resolved_page_size(page_size),
+            **extra,
         )
         new_state = self._client._invoke_graph(state)
         persisted = self._persist_state(
