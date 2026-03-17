@@ -16,6 +16,24 @@ load_dotenv()
 def print_result(result) -> None:
     print("session_id:", result.session_id)
     print("waiting_for:", result.waiting_for)
+    if result.waiting_for == "clarification":
+        clarification = result.clarification
+        prompt = (
+            clarification.text.strip()
+            if clarification and clarification.text
+            else "Could you clarify your request?"
+        )
+        print("clarification:", prompt)
+        if clarification and clarification.mode == "mcq" and clarification.options:
+            for idx, option in enumerate(clarification.options):
+                letter = chr(ord("A") + idx) if idx < 26 else str(idx + 1)
+                print(f"  {letter}. {option.label}")
+            print("reply_format: option or natural language")
+        else:
+            print("reply_format: natural language")
+        if result.debug:
+            print("debug:", result.debug)
+        return
     print("page:", result.page.model_dump())
     for clip in result.clips:
         print(
