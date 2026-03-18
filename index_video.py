@@ -16,7 +16,7 @@ def main() -> None:
     parser.add_argument(
         "--config", default=os.getenv("DEEPSEARCH_CONFIG", "deepsearch_config.yaml")
     )
-    parser.add_argument("--collection-id", required=True)
+    parser.add_argument("--collection-id", default="")
     parser.add_argument("--video-url")
     parser.add_argument("--media-id")
     parser.add_argument("--name")

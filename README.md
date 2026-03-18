@@ -118,9 +118,11 @@ Optional:
 
 ### 3) Index a video
 
+`--collection-id` is optional. If you already have a VideoDB collection, pass its ID. If you leave it empty, DeepSearch falls back to your account default collection via the SDK.
+
 ```bash
 uv run python index_video.py \
-  --collection-id <collection_id> \
+  [--collection-id <collection_id>] \
   --video-url <public_video_url>
 ```
 
@@ -128,17 +130,37 @@ Or index an existing VideoDB media object:
 
 ```bash
 uv run python index_video.py \
-  --collection-id <collection_id> \
+  [--collection-id <collection_id>] \
   --media-id <media_id>
 ```
 
-If your source video is local, upload it to VideoDB first and then run indexing with its `media_id`.
+If your source video is local, upload it to VideoDB first, copy the returned `media_id`, then run indexing with `--media-id`.
+
+```python
+import videodb
+
+conn = videodb.connect(api_key="YOUR_VIDEO_DB_API_KEY")
+collection = conn.get_collection()  # or conn.get_collection("<collection_id>")
+
+# Upload local media file
+video = collection.upload(file_path="./videos/my_video.mp4", name="My Local Video")
+
+print("media_id:", video.id)
+```
+
+Then index it with DeepSearch:
+
+```bash
+uv run python index_video.py \
+  [--collection-id <collection_id>] \
+  --media-id <media_id>
+```
 
 ### 4) Run interactive retrieval
 
 ```bash
 uv run python run_deepsearch.py \
-  --collection-id <collection_id> \
+  [--collection-id <collection_id>] \
   --query "rainy night scenes with emotional dialogue"
 ```
 

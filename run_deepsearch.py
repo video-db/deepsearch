@@ -60,7 +60,7 @@ def main() -> None:
         "--config",
         default=os.getenv("DEEPSEARCH_CONFIG", "deepsearch_config.yaml"),
     )
-    parser.add_argument("--collection-id", required=True)
+    parser.add_argument("--collection-id", default="")
     parser.add_argument("--query")
     parser.add_argument("--video-id")
     parser.add_argument("--session-id")
