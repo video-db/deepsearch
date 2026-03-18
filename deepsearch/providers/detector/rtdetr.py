@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 from io import BytesIO
@@ -68,7 +68,13 @@ class RTDetrDetector(DetectorProvider):
         self.model.eval()
         logger.info("RT-DETR v2 loaded and ready for local object detection")
 
-    def detect_batch(self, frames: List[Dict[str, Any]]) -> List[FrameDetections]:
+    def detect_batch(
+        self,
+        frames: List[Dict[str, Any]],
+        *,
+        show_progress: bool = True,
+        progress_cb: Optional[Callable[[int], None]] = None,
+    ) -> List[FrameDetections]:
         if not frames:
             return []
 
@@ -98,9 +104,14 @@ class RTDetrDetector(DetectorProvider):
             pending_urls.clear()
             batches_run += 1
 
-        with tqdm(
-            total=len(frames), desc="Object detection", unit="frame", leave=False
-        ) as pbar:
+        progress_ctx = tqdm(
+            total=len(frames),
+            desc="Object detection",
+            unit="frame",
+            leave=False,
+            disable=not show_progress,
+        )
+        with progress_ctx as pbar:
             for f in frames:
                 try:
                     resp = requests.get(f["frame_url"], timeout=30)
@@ -116,7 +127,10 @@ class RTDetrDetector(DetectorProvider):
                         f"Failed to fetch frame at t={f.get('frame_time')}: {e}"
                     )
                 finally:
-                    pbar.update(1)
+                    if show_progress:
+                        pbar.update(1)
+                    if progress_cb:
+                        progress_cb(1)
 
             flush_pending()
 

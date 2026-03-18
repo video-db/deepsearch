@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -21,7 +21,13 @@ class FrameDetections(BaseModel):
 
 class DetectorProvider(ABC):
     @abstractmethod
-    def detect_batch(self, frames: List[Dict[str, Any]]) -> List[FrameDetections]:
+    def detect_batch(
+        self,
+        frames: List[Dict[str, Any]],
+        *,
+        show_progress: bool = True,
+        progress_cb: Optional[Callable[[int], None]] = None,
+    ) -> List[FrameDetections]:
         """Detect objects in a batch of frames.
 
         Each frame dict must contain 'frame_url' and 'frame_time'.

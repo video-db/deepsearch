@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from tqdm.auto import tqdm
 from videodb import SceneExtractionType
 
 from deepsearch.config.schema import DeepSearchConfig
@@ -651,55 +652,65 @@ class IndexingPipeline:
         )
 
         chunk_size = max(1, int(self.idx_cfg.object_detection.resume_chunk_size))
-        for i in range(0, len(pending), chunk_size):
-            chunk = pending[i : i + chunk_size]
-            detections = provider.detect_batch(
-                [
-                    {"frame_url": f["frame_url"], "frame_time": f["frame_time"]}
-                    for f in chunk
-                ]
-            )
-            detected_by_key = {
-                self._frame_key(det.frame_url, det.frame_time): det
-                for det in detections
-            }
-            for frame in chunk:
-                key = self._frame_key(frame.get("frame_url"), frame.get("frame_time"))
-                det = detected_by_key.get(key)
-                existing_by_key[key] = {
-                    "video_id": frame.get("video_id"),
-                    "start": frame.get("start"),
-                    "end": frame.get("end"),
-                    "time": frame.get("frame_time"),
-                    "frame_url": frame.get("frame_url"),
-                    "provider": "rtdetr_v2",
-                    "object_detection": [
-                        {
-                            "label": item.label,
-                            "score": item.score,
-                            "confidence": item.score,
-                            "bbox": item.box,
-                        }
-                        for item in (det.detections if det else [])
+        with tqdm(
+            total=len(pending), desc="Object detection", unit="frame", leave=False
+        ) as pbar:
+            for i in range(0, len(pending), chunk_size):
+                chunk = pending[i : i + chunk_size]
+                detections = provider.detect_batch(
+                    [
+                        {"frame_url": f["frame_url"], "frame_time": f["frame_time"]}
+                        for f in chunk
                     ],
+                    show_progress=False,
+                    progress_cb=pbar.update,
+                )
+                detected_by_key = {
+                    self._frame_key(det.frame_url, det.frame_time): det
+                    for det in detections
                 }
-            vision_metadata = sorted(
-                existing_by_key.values(),
-                key=lambda x: (float(x.get("time", 0)), str(x.get("frame_url", ""))),
-            )
-            self._save_artifact(
-                {
-                    "collection_id": collection_id,
-                    "video_id": getattr(video, "id", ""),
-                },
-                "vision_metadata",
-                vision_metadata,
-            )
-            logger.info(
-                "Object detection checkpoint saved processed=%s/%s",
-                min(i + len(chunk), len(pending)) + len(existing),
-                len(frames),
-            )
+                for frame in chunk:
+                    key = self._frame_key(
+                        frame.get("frame_url"), frame.get("frame_time")
+                    )
+                    det = detected_by_key.get(key)
+                    existing_by_key[key] = {
+                        "video_id": frame.get("video_id"),
+                        "start": frame.get("start"),
+                        "end": frame.get("end"),
+                        "time": frame.get("frame_time"),
+                        "frame_url": frame.get("frame_url"),
+                        "provider": "rtdetr_v2",
+                        "object_detection": [
+                            {
+                                "label": item.label,
+                                "score": item.score,
+                                "confidence": item.score,
+                                "bbox": item.box,
+                            }
+                            for item in (det.detections if det else [])
+                        ],
+                    }
+                vision_metadata = sorted(
+                    existing_by_key.values(),
+                    key=lambda x: (
+                        float(x.get("time", 0)),
+                        str(x.get("frame_url", "")),
+                    ),
+                )
+                self._save_artifact(
+                    {
+                        "collection_id": collection_id,
+                        "video_id": getattr(video, "id", ""),
+                    },
+                    "vision_metadata",
+                    vision_metadata,
+                )
+                logger.info(
+                    "Object detection checkpoint saved processed=%s/%s",
+                    min(i + len(chunk), len(pending)) + len(existing),
+                    len(frames),
+                )
 
         vision_metadata = sorted(
             existing_by_key.values(),
