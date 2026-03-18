@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-import platform
 import time
-import math
 from typing import Any, Dict, List
 
 import requests
@@ -77,37 +75,16 @@ class RTDetrDetector(DetectorProvider):
         from PIL import Image
 
         start = time.time()
-        images, times, urls = [], [], []
-        for f in tqdm(
-            frames,
-            desc="Object detection: fetching frames",
-            unit="frame",
-            leave=False,
-        ):
-            try:
-                resp = requests.get(f["frame_url"], timeout=30)
-                resp.raise_for_status()
-                img = Image.open(BytesIO(resp.content)).convert("RGB")
-                images.append(img)
-                times.append(f["frame_time"])
-                urls.append(f.get("frame_url"))
-            except Exception as e:
-                logger.warning(f"Failed to fetch frame at t={f.get('frame_time')}: {e}")
-
         results: List[FrameDetections] = []
-        total_batches = math.ceil(len(images) / self.batch_size) if images else 0
-        for i in tqdm(
-            range(0, len(images), self.batch_size),
-            desc="Object detection: inferencing",
-            unit="batch",
-            total=total_batches,
-            leave=False,
-        ):
-            batch_imgs = images[i : i + self.batch_size]
-            batch_times = times[i : i + self.batch_size]
-            batch_urls = urls[i : i + self.batch_size]
-            batch_dets = self._run_batch(batch_imgs)
-            for t, u, dets in zip(batch_times, batch_urls, batch_dets):
+        pending_images, pending_times, pending_urls = [], [], []
+        batches_run = 0
+
+        def flush_pending() -> None:
+            nonlocal batches_run
+            if not pending_images:
+                return
+            batch_dets = self._run_batch(pending_images)
+            for t, u, dets in zip(pending_times, pending_urls, batch_dets):
                 results.append(
                     FrameDetections(
                         frame_time=t,
@@ -116,12 +93,38 @@ class RTDetrDetector(DetectorProvider):
                         provider="rtdetr_v2",
                     )
                 )
+            pending_images.clear()
+            pending_times.clear()
+            pending_urls.clear()
+            batches_run += 1
+
+        with tqdm(
+            total=len(frames), desc="Object detection", unit="frame", leave=False
+        ) as pbar:
+            for f in frames:
+                try:
+                    resp = requests.get(f["frame_url"], timeout=30)
+                    resp.raise_for_status()
+                    img = Image.open(BytesIO(resp.content)).convert("RGB")
+                    pending_images.append(img)
+                    pending_times.append(f["frame_time"])
+                    pending_urls.append(f.get("frame_url"))
+                    if len(pending_images) >= self.batch_size:
+                        flush_pending()
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to fetch frame at t={f.get('frame_time')}: {e}"
+                    )
+                finally:
+                    pbar.update(1)
+
+            flush_pending()
 
         elapsed = time.time() - start
         logger.info(
             "Local object detection complete frames=%s batches=%s elapsed=%.1fs",
-            len(images),
-            (len(images) + self.batch_size - 1) // self.batch_size,
+            len(results),
+            batches_run,
             elapsed,
         )
         return results
