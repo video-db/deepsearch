@@ -31,11 +31,11 @@ indexing:
     provider: rtdetr_v2
     threshold: 0.85
     batch_size: 8
-    resume_chunk_size: 256
+    resume_chunk_size: 30
   vlm:
     llm_max_images: 10
     batch_size: 500
-    max_concurrent_llm_calls: 150
+    max_concurrent_llm_calls: 10
     generate_subplot: true
     subplot_chunk_size: 250
     retry_attempts: 3

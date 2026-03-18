@@ -43,7 +43,7 @@ class SceneExtractionConfig(BaseModel):
     shot_threshold: int = 30
     shot_frame_count: int = 10
     time_interval: int = 1
-    time_frame_count: int = 10
+    time_frame_count: int = 1
 
 
 class TranscriptConfig(BaseModel):
@@ -58,7 +58,7 @@ class ObjectDetectionConfig(BaseModel):
     backend: str = "rtdetr_v2"
     threshold: float = 0.85
     batch_size: int = 64
-    resume_chunk_size: int = 256
+    resume_chunk_size: int = 30
 
 
 class VLMConfig(BaseModel):
