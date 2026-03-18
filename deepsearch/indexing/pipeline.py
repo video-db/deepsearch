@@ -123,7 +123,12 @@ class IndexingPipeline:
                 self._emit("transcript", "completed", "skipped: restored artifacts")
                 self._emit("detect", "completed", "skipped: restored artifacts")
                 self._emit("enrich", "completed", "loaded compiled_scenes from DB")
-                self._emit("summarize", "completed", "loaded subplot_summary from DB")
+                summarize_msg = (
+                    "loaded subplot_summary from DB"
+                    if ctx.get("subplot_data")
+                    else "skipped: no subplot artifact restored"
+                )
+                self._emit("summarize", "completed", summarize_msg)
             else:
                 ctx = self._run_transcript_stage(ctx)
                 self._write_checkpoint(ctx, current_stage="transcript")
@@ -199,6 +204,7 @@ class IndexingPipeline:
             self._index_transcript(ctx["video"])
             transcript = self._get_transcript_for_vlm(ctx["video"])
             ctx["transcript"] = transcript
+            self._save_artifact(ctx, "transcript", transcript)
             self._emit(
                 stage, "completed", f"Fetched {len(transcript)} transcript segments"
             )
@@ -306,11 +312,29 @@ class IndexingPipeline:
         stage = "write_indexes"
         self._emit(stage, "started", "Writing semantic indexes to VideoDB")
         try:
+            required_indexes = self._required_indexes_for_run()
             index_result = self._create_indexes(
                 ctx["video"],
                 ctx.get("compiled_scenes") or [],
                 ctx.get("subplot_data"),
             )
+            missing, errored = self._missing_required_indexes(
+                index_result, required_indexes
+            )
+            if missing or errored:
+                logger.warning(
+                    "Required indexes missing after write_indexes. missing=%s errored=%s required=%s",
+                    missing,
+                    errored,
+                    sorted(required_indexes),
+                )
+                index_result = self._repair_missing_required_indexes(
+                    ctx,
+                    index_result,
+                    missing_indexes=missing,
+                    errored_indexes=errored,
+                    required_indexes=required_indexes,
+                )
             ctx["index_result"] = index_result
             failed_indexes = index_result.get("failed_indexes", {})
             if failed_indexes:
@@ -348,13 +372,12 @@ class IndexingPipeline:
             stage, "started", "Validating required indexes and building manifest"
         )
         try:
+            required_indexes = self._required_indexes_for_run()
             indexes = ctx["index_result"].get("indexes", {})
             failed_indexes = ctx["index_result"].get("failed_indexes", {})
-            missing = sorted(VideoDBIndexer.REQUIRED_INDEXES.difference(indexes))
+            missing = sorted(required_indexes.difference(indexes))
             missing_errors = sorted(
-                name
-                for name in VideoDBIndexer.REQUIRED_INDEXES
-                if "error" in indexes.get(name, {})
+                name for name in required_indexes if "error" in indexes.get(name, {})
             )
             if missing or missing_errors:
                 details = {
@@ -800,9 +823,36 @@ class IndexingPipeline:
         subplot = self.index_artifact_store.load_index_artifact(
             collection_id, video_id, "subplot_summary"
         )
+        transcript = self.index_artifact_store.load_index_artifact(
+            collection_id, video_id, "transcript"
+        )
+        vision_metadata = self.index_artifact_store.load_index_artifact(
+            collection_id, video_id, "vision_metadata"
+        )
         ctx["compiled_scenes"] = compiled
         ctx["subplot_data"] = subplot if isinstance(subplot, dict) else None
+        if isinstance(transcript, list):
+            ctx["transcript"] = transcript
+        if isinstance(vision_metadata, list):
+            ctx["vision_metadata"] = vision_metadata
         ctx["_restored_for_reindex"] = True
+
+    def _required_indexes_for_run(self) -> set[str]:
+        return VideoDBIndexer.required_indexes(
+            include_summary=bool(self.idx_cfg.vlm.generate_subplot)
+        )
+
+    def _missing_required_indexes(
+        self,
+        index_result: Dict[str, Any],
+        required_indexes: set[str],
+    ) -> tuple[list[str], list[str]]:
+        indexes = index_result.get("indexes", {})
+        missing = sorted(required_indexes.difference(indexes))
+        errored = sorted(
+            name for name in required_indexes if "error" in indexes.get(name, {})
+        )
+        return missing, errored
 
     def _run_subplot_summary(self, compiled_scenes, work_dir):
         vlm_cfg = self.idx_cfg.vlm
@@ -845,6 +895,220 @@ class IndexingPipeline:
             },
         )
         return indexer.create_indexes(compiled_scenes, subplot_data)
+
+    def _repair_missing_required_indexes(
+        self,
+        ctx: Dict[str, Any],
+        index_result: Dict[str, Any],
+        *,
+        missing_indexes: List[str],
+        errored_indexes: List[str],
+        required_indexes: set[str],
+    ) -> Dict[str, Any]:
+        target = set(missing_indexes) | set(errored_indexes)
+        if not target:
+            return index_result
+
+        summary_target = target.intersection(VideoDBIndexer.SUMMARY_INDEXES)
+        base_target = target.intersection(VideoDBIndexer.BASE_REQUIRED_INDEXES)
+
+        if summary_target:
+            if not self.idx_cfg.vlm.generate_subplot:
+                logger.info(
+                    "Skipping summary index repair because generate_subplot=false target=%s",
+                    sorted(summary_target),
+                )
+            else:
+                self._ensure_subplot_data_for_repair(ctx)
+
+        if base_target:
+            self._repair_compiled_scenes_for_missing_indexes(ctx, sorted(base_target))
+
+        repaired = self._create_indexes(
+            ctx["video"],
+            ctx.get("compiled_scenes") or [],
+            ctx.get("subplot_data"),
+        )
+        missing_after, errored_after = self._missing_required_indexes(
+            repaired, required_indexes
+        )
+        if missing_after or errored_after:
+            details = {
+                "missing_indexes": missing_after,
+                "errored_indexes": errored_after,
+                "failed_indexes": repaired.get("failed_indexes", {}),
+            }
+            raise DeepSearchError(
+                code=DS_MISSING_INDEX_ERROR,
+                message="Required indexes still missing after repair attempt",
+                stage_or_node="write_indexes",
+                retryable=False,
+                details=details,
+            )
+        return repaired
+
+    def _ensure_subplot_data_for_repair(self, ctx: Dict[str, Any]) -> None:
+        if isinstance(ctx.get("subplot_data"), dict):
+            return
+        compiled = ctx.get("compiled_scenes")
+        if not isinstance(compiled, list) or not compiled:
+            raise DeepSearchError(
+                DS_PIPELINE_STAGE_ERROR,
+                "Cannot build subplot/final summary indexes: missing artifact 'compiled_scenes'",
+                stage_or_node="summarize",
+                retryable=False,
+            )
+        logger.info(
+            "Repairing missing summary indexes by regenerating subplot_summary/final_summary"
+        )
+        subplot_result = self._run_subplot_summary(compiled, ctx["work_dir"])
+        subplot_path = subplot_result.get("subplot_path") if subplot_result else None
+        if not subplot_path:
+            raise DeepSearchError(
+                DS_PIPELINE_STAGE_ERROR,
+                "Subplot summary generation did not produce subplot_path",
+                stage_or_node="summarize",
+                retryable=False,
+            )
+        with open(subplot_path, encoding="utf-8") as handle:
+            subplot_data = json.load(handle)
+        ctx["subplot_data"] = subplot_data
+        self._save_artifact(ctx, "subplot_summary", subplot_data)
+
+    def _repair_compiled_scenes_for_missing_indexes(
+        self,
+        ctx: Dict[str, Any],
+        missing_base_indexes: List[str],
+    ) -> None:
+        compiled = ctx.get("compiled_scenes")
+        if not isinstance(compiled, list) or not compiled:
+            raise DeepSearchError(
+                DS_PIPELINE_STAGE_ERROR,
+                "Cannot repair missing base indexes: missing artifact 'compiled_scenes'",
+                stage_or_node="enrich",
+                retryable=False,
+            )
+
+        self._ensure_enrichment_inputs_for_repair(ctx)
+
+        missing_scene_keys = self._collect_incomplete_scene_keys(
+            compiled,
+            missing_base_indexes,
+        )
+        shot_scenes = ctx["video"].get_scene_collection(ctx["shot_scene_id"]).scenes
+        frame_scenes = ctx["video"].get_scene_collection(ctx["time_scene_id"]).scenes
+
+        target_scenes = [
+            s
+            for s in shot_scenes
+            if self._scene_key(s.start, s.end) in missing_scene_keys
+        ]
+        if not target_scenes:
+            logger.warning(
+                "No exact scene matches found for incomplete compiled entries; rerunning full scene enrichment"
+            )
+            target_scenes = list(shot_scenes)
+
+        logger.info(
+            "Repairing compiled scenes by rerunning full VLM extraction for %s/%s scenes; missing indexes=%s",
+            len(target_scenes),
+            len(shot_scenes),
+            ",".join(missing_base_indexes),
+        )
+        rerun = self._run_vlm(
+            ctx["transcript"],
+            ctx.get("vision_metadata") or [],
+            target_scenes,
+            frame_scenes,
+            ctx["work_dir"],
+        )
+        repaired_scenes = self._load_compiled_scenes(rerun["compiled_path"])
+        repaired_by_key = {
+            self._scene_key(s.get("start"), s.get("end")): s for s in repaired_scenes
+        }
+        merged = []
+        for scene in compiled:
+            key = self._scene_key(scene.get("start"), scene.get("end"))
+            merged.append(repaired_by_key.get(key, scene))
+        ctx["compiled_scenes"] = merged
+        self._save_artifact(ctx, "compiled_scenes", merged)
+
+    def _ensure_enrichment_inputs_for_repair(self, ctx: Dict[str, Any]) -> None:
+        if not isinstance(ctx.get("transcript"), list):
+            transcript = None
+            if (
+                self.index_artifact_store
+                and ctx.get("collection_id")
+                and ctx.get("video_id")
+            ):
+                transcript = self.index_artifact_store.load_index_artifact(
+                    ctx["collection_id"],
+                    ctx["video_id"],
+                    "transcript",
+                )
+            if not isinstance(transcript, list):
+                self._index_transcript(ctx["video"])
+                transcript = self._get_transcript_for_vlm(ctx["video"])
+            ctx["transcript"] = transcript
+            self._save_artifact(ctx, "transcript", transcript)
+
+        if not isinstance(ctx.get("vision_metadata"), list):
+            vision_metadata = None
+            if (
+                self.index_artifact_store
+                and ctx.get("collection_id")
+                and ctx.get("video_id")
+            ):
+                vision_metadata = self.index_artifact_store.load_index_artifact(
+                    ctx["collection_id"],
+                    ctx["video_id"],
+                    "vision_metadata",
+                )
+            ctx["vision_metadata"] = (
+                vision_metadata if isinstance(vision_metadata, list) else []
+            )
+
+    def _collect_incomplete_scene_keys(
+        self,
+        compiled_scenes: List[Dict[str, Any]],
+        missing_base_indexes: List[str],
+    ) -> set[str]:
+        field_map = {
+            name: path
+            for name, path in VideoDBIndexer.INDEX_FIELDS.items()
+            if name in missing_base_indexes
+        }
+        keys: set[str] = set()
+        for scene in compiled_scenes:
+            for index_name, field_path in field_map.items():
+                value = self._scene_index_value(scene, index_name, field_path)
+                if not value:
+                    keys.add(self._scene_key(scene.get("start"), scene.get("end")))
+                    break
+        return keys
+
+    def _scene_index_value(
+        self,
+        scene: Dict[str, Any],
+        index_name: str,
+        field_path: str,
+    ) -> Any:
+        if index_name == "topic":
+            topic = scene.get("topic")
+            if isinstance(topic, str):
+                return topic
+        value: Any = scene
+        for part in field_path.split("."):
+            if not isinstance(value, dict):
+                return None
+            value = value.get(part)
+        return value
+
+    def _scene_key(self, start: Any, end: Any) -> str:
+        try:
+            return f"{float(start):.3f}:{float(end):.3f}"
+        except (TypeError, ValueError):
+            return f"{start}:{end}"
 
     def _extract_and_store_metadata(self, compiled_scenes, collection_id, video_id):
         objects = set()

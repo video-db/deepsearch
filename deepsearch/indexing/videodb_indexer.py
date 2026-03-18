@@ -20,15 +20,20 @@ def _flatten_dotpath(data: Dict[str, Any], path: str) -> Any:
 
 
 class VideoDBIndexer:
-    REQUIRED_INDEXES = {
+    BASE_REQUIRED_INDEXES = {
         "location",
         "scene_description",
         "transcript",
         "topic",
         "object_description",
+    }
+
+    SUMMARY_INDEXES = {
         "subplot_summary",
         "final_summary",
     }
+
+    REQUIRED_INDEXES = BASE_REQUIRED_INDEXES | SUMMARY_INDEXES
 
     INDEX_FIELDS = {
         "action": "action",
@@ -53,6 +58,14 @@ class VideoDBIndexer:
         self.created_indexes = {}
         self.replaced_indexes: List[Dict[str, str]] = []
         self.failed_indexes: Dict[str, Dict[str, Any]] = {}
+
+    @classmethod
+    def required_indexes(cls, include_summary: bool) -> set[str]:
+        return (
+            cls.BASE_REQUIRED_INDEXES | cls.SUMMARY_INDEXES
+            if include_summary
+            else set(cls.BASE_REQUIRED_INDEXES)
+        )
 
     def index_from_files(
         self, compiled_scenes_path: str, subplot_summary_path: Optional[str] = None
