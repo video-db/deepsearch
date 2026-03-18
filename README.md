@@ -27,6 +27,10 @@
     ·
     <a href="#how-it-works">How It Works</a>
     ·
+    <a href="#python-integration">Python Integration</a>
+    ·
+    <a href="#llm-routing-and-per-node-models">LLM Routing</a>
+    ·
     <a href="https://github.com/video-db/deepsearch/issues">Report Bug</a>
   </p>
 </p>
@@ -116,6 +120,10 @@ Optional:
 - `DEEPSEARCH_DB_PATH`
 - `DEEPSEARCH_CONFIG` (defaults to `deepsearch_config.yaml`)
 
+If you use a different LLM route:
+- OpenRouter route: set `OPENROUTER_API_KEY`
+- Vercel AI Gateway route: set `VERCEL_AI_GATEWAY_API_KEY` and optionally `VERCEL_AI_GATEWAY_BASE_URL`
+
 ### 3) Index a video
 
 `--collection-id` is optional. If you already have a VideoDB collection, pass its ID. If you leave it empty, DeepSearch falls back to your account default collection via the SDK.
@@ -171,6 +179,32 @@ Interactive commands:
 
 ---
 
+## Python Integration
+
+If you are integrating DeepSearch directly inside your app, use `DeepSearchClient`:
+
+```python
+from deepsearch import DeepSearchClient
+
+client = DeepSearchClient(config="deepsearch_config.yaml")
+
+# Index from a public URL
+manifest = client.index_video(
+    collection_id="c-...",
+    video_url="https://example.com/video.mp4",
+)
+
+# Or index an existing VideoDB media
+# manifest = client.index_video(collection_id="c-...", media_id="m-...")
+
+session = client.start_session(collection_id="c-...", page_size=5)
+first = session.search("find product demo moments")
+next_page = session.followup(ui_event={"type": "show_more"})
+refined = session.followup(text="only include scenes with pricing discussion")
+```
+
+---
+
 ## Configuration
 
 DeepSearch supports typed config, dict config, and YAML-file config.
@@ -184,6 +218,49 @@ Example:
 ```bash
 export DEEPSEARCH_RETRIEVAL__PAGE_SIZE=20
 ```
+
+---
+
+## LLM Routing and Per-Node Models
+
+DeepSearch uses one configured LLM route for a run (OpenAI-compatible, OpenRouter, or Vercel AI Gateway), while still letting you set different models per indexing/retrieval node.
+
+### Route examples
+
+```yaml
+llm:
+  route: openrouter
+  provider_mode: openrouter
+  openrouter:
+    enabled: true
+    api_key_env: OPENROUTER_API_KEY
+```
+
+```yaml
+llm:
+  route: vercel_ai_sdk_python
+  provider_mode: direct
+```
+
+### Per-node model overrides
+
+```yaml
+llm:
+  models:
+    indexing:
+      scene_enrichment: openai/o3
+      subplot_summary: openai/o3-mini
+      final_summary: openai/o3
+    retrieval:
+      planner: openai/o3
+      paraphrase: openai/gpt-4o-mini
+      validator: openai/o3-mini
+      none_analyzer: openai/o3-mini
+      interpreter: openai/o3
+      reranker: openai/o3
+```
+
+Use model IDs valid for your selected route/provider.
 
 ---
 
