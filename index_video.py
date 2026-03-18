@@ -11,14 +11,21 @@ from deepsearch import DeepSearchClient
 load_dotenv()
 
 
+def _looks_like_media_id(value: str | None) -> bool:
+    if not value:
+        return False
+    return value.startswith("m-")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Index a video with DeepSearch")
     parser.add_argument(
         "--config", default=os.getenv("DEEPSEARCH_CONFIG", "deepsearch_config.yaml")
     )
     parser.add_argument("--collection-id", default="")
-    parser.add_argument("--video-url")
-    parser.add_argument("--media-id")
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument("--video-url")
+    source_group.add_argument("--media-id")
     parser.add_argument("--name")
     parser.add_argument("--api-key", default=os.getenv("VIDEO_DB_API_KEY"))
     parser.add_argument(
@@ -26,6 +33,12 @@ def main() -> None:
     )
     parser.add_argument("--force-reindex", action="store_true")
     args = parser.parse_args()
+
+    if args.video_url and _looks_like_media_id(args.video_url):
+        raise SystemExit(
+            "It looks like you passed a VideoDB media ID to --video-url. "
+            "Use --media-id <m-...> instead."
+        )
 
     config = args.config if os.path.exists(args.config) else None
     client = DeepSearchClient(
