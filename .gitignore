@@ -6,3 +6,5 @@ deepsearch.db
 deepsearch_oss_specs.md
 deepsearch_oss_prd.md
 **/__pycache__/
+deepsearch.egg-info/
+tests/
