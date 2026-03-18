@@ -289,10 +289,6 @@ docs/specs.md                     # Technical specs draft
 
 ## Troubleshooting
 
-### Missing API key
-
-If initialization fails with `VIDEO_DB_API_KEY is required`, verify `.env` is loaded and the key is present.
-
 ### Local detector import errors
 
 If detection stage raises missing modules (`torch`, `transformers`, etc.), either install detection extras or disable local detection mode in config.
