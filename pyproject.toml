@@ -28,3 +28,6 @@ detection = [
 
 [tool.setuptools.packages.find]
 include = ["deepsearch*"]
+
+[tool.setuptools.package-data]
+deepsearch = ["retrieval/prompts/*.txt", "retrieval/prompts/*.yaml"]
