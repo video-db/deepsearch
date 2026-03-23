@@ -37,7 +37,7 @@ class ClarificationOption(BaseModel):
 class ClarificationQuestion(BaseModel):
     question_id: str = ""
     text: str = ""
-    mode: Literal["text", "mcq"] = "text"
+    mode: Literal["text", "mcq", "open"] = "text"
     options: List[ClarificationOption] = Field(default_factory=list)
 
 
